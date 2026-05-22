@@ -109,7 +109,7 @@ Use markdown for structure when helpful.`
 //  MAIN GENERATE FUNCTION
 // ─────────────────────────────────────────────
 
-export async function generateMessage(messages, modelId = "gemini-2.5-flash") {
+export async function generateMessage(messages, modelId = "gemini-2.5-flash", file = null) {
   try {
     const userQuery = messages[messages.length - 1]?.content || "";
     const queryType = classifyQuery(userQuery);
@@ -168,11 +168,29 @@ export async function generateMessage(messages, modelId = "gemini-2.5-flash") {
 
     const finalMessages = [
       systemPrompt,
-      ...messages.map((msg) => {
+      ...messages.slice(0, -1).map((msg) => {
         if (msg.role === "user") return new HumanMessage(msg.content);
         return new AIMessage(msg.content);
       }),
     ];
+
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg) {
+      if (lastMsg.role === "user" && file && file.type === "image" && file.base64) {
+        finalMessages.push(new HumanMessage({
+          content: [
+            { type: "text", text: lastMsg.content },
+            { type: "image_url", image_url: { url: file.base64 } }
+          ]
+        }));
+      } else {
+        if (lastMsg.role === "user") {
+          finalMessages.push(new HumanMessage(lastMsg.content));
+        } else {
+          finalMessages.push(new AIMessage(lastMsg.content));
+        }
+      }
+    }
 
     const response = await model.invoke(finalMessages);
     return response.content;

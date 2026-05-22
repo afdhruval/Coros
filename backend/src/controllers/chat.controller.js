@@ -4,12 +4,12 @@ import messageModel from "../model/message.model.js"
 
 export async function sendMessage(req, res) {
     try {
-        const { message, chat: chatId, model } = req.body;
+        const { message, chat: chatId, model, file } = req.body;
 
         // GUEST MODE: If no authenticated user, just return AI answer without saving or creating persistent chat
         if (!req.user || !req.user.id) {
             const formattedMessages = [{ role: "user", content: message }];
-            const result = await generateMessage(formattedMessages, model);
+            const result = await generateMessage(formattedMessages, model, file);
             
             return res.status(200).json({
                 chat: { _id: 'guest-' + Date.now() },
@@ -48,7 +48,7 @@ export async function sendMessage(req, res) {
             content: m.content
         }));
 
-        const result = await generateMessage(formattedMessages, model);
+        const result = await generateMessage(formattedMessages, model, file);
 
         await messageModel.create({
             chat: currentChatId,

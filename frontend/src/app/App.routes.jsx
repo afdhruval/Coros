@@ -11,15 +11,41 @@ function AppRouter() {
     return (
         <BrowserRouter>
             <Toaster 
-                position="bottom-right" 
+                position="top-right" 
                 reverseOrder={false} 
                 toastOptions={{
                     style: {
-                        background: '#1a1a1a',
-                        color: '#fff',
-                        border: '1px solid #2a2a2a',
-                        borderRadius: '12px',
-                        padding: '12px'
+                        background: 'rgba(10, 10, 10, 0.85)',
+                        color: '#ffffff',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '16px',
+                        padding: '14px 24px',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        fontFamily: "'Inter', sans-serif",
+                        backdropFilter: 'blur(12px)',
+                        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6)',
+                        letterSpacing: '0.01em',
+                    },
+                    success: {
+                        duration: 3000,
+                        iconTheme: {
+                            primary: '#00f2fe',
+                            secondary: '#0a0a0a',
+                        },
+                        style: {
+                            borderLeft: '4px solid #00f2fe',
+                        }
+                    },
+                    error: {
+                        duration: 4000,
+                        iconTheme: {
+                            primary: '#ef4444',
+                            secondary: '#0a0a0a',
+                        },
+                        style: {
+                            borderLeft: '4px solid #ef4444',
+                        }
                     }
                 }}
             />

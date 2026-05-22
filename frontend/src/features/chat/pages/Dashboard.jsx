@@ -33,19 +33,54 @@ const TypewriterText = ({ content, speed = 10, onComplete }) => {
     );
 };
 
-const UnifiedChatInput = ({ placeholder, val, onChange, onSend, onToggleModels, isModelSelectorOpen, ModelSelector, isLoading }) => (
+const UnifiedChatInput = ({
+    placeholder, val, onChange, onSend, onToggleModels,
+    isModelSelectorOpen, ModelSelector, isLoading, onStop,
+    attachedFile, onRemoveFile, onAttachClick, currentModel,
+    modelSelectorRef
+}) => (
     <div className="discovery-input-wrapper">
         <div className="discovery-input-card-v2">
-            <textarea placeholder={placeholder} value={val} onChange={e => onChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && onSend(e)} />
-            <div className="input-actions-row">
-                <div className="left" style={{ position: 'relative' }}>
-                    <button className="action-ic" onClick={onToggleModels}><i className="ri-add-line"></i></button>
-                    {isModelSelectorOpen && <ModelSelector />}
-                </div>
-                <div className="right">
-                    <button className="send-circle" onClick={onSend} disabled={!val.trim() || isLoading}>
-                        <i className={isLoading ? "ri-loader-4-line spin" : "ri-arrow-up-line"}></i>
+            <div className="card-top-row" ref={modelSelectorRef}>
+                <button className="model-select-pill" onClick={onToggleModels} disabled={isLoading} title="Select AI Model" type="button">
+                    <i className={currentModel?.provider === 'OpenAI' ? "ri-openai-fill" : currentModel?.provider === 'Mistral' ? "ri-sparkling-2-line" : currentModel?.provider === 'Groq' ? "ri-cpu-line" : "ri-google-fill"}></i>
+                    <span>{currentModel?.name || "Select Model"}</span>
+                    <i className="ri-arrow-down-s-line"></i>
+                </button>
+                {isModelSelectorOpen && <ModelSelector />}
+            </div>
+
+            {attachedFile && (
+                <div className="attached-file-preview">
+                    <i className={attachedFile.type === 'pdf' ? "ri-file-pdf-2-line pdf-icon" : "ri-image-line image-icon"}></i>
+                    <span className="file-name">{attachedFile.name}</span>
+                    <button className="remove-file-btn" onClick={onRemoveFile} title="Remove file" type="button">
+                        <i className="ri-close-line"></i>
                     </button>
+                </div>
+            )}
+            <textarea
+                placeholder={placeholder}
+                value={val}
+                onChange={e => onChange(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (isLoading ? e.preventDefault() : onSend(e))}
+            />
+            <div className="input-actions-row">
+                <div className="left"></div>
+                <div className="right" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <button className="action-ic attach-btn" onClick={onAttachClick} disabled={isLoading} title="Attach PDF or Image" type="button">
+                        <i className="ri-attachment-2"></i>
+                    </button>
+
+                    {isLoading ? (
+                        <button className="send-circle stop-btn" onClick={onStop} title="Stop generating" style={{ background: '#e11d48', color: '#fff' }} type="button">
+                            <i className="ri-stop-fill"></i>
+                        </button>
+                    ) : (
+                        <button className="send-circle" onClick={onSend} disabled={(!val.trim() && !attachedFile) || isLoading} type="button">
+                            <i className="ri-arrow-up-line"></i>
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
@@ -75,9 +110,92 @@ const Dashboard = () => {
     const [currentModel, setCurrentModel] = useState({ id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google' });
     const [modelSearchTerm, setModelSearchTerm] = useState('');
     const [latestAiMsgId, setLatestAiMsgId] = useState(null);
-    
+    const [attachedFile, setAttachedFile] = useState(null);
+
     const messagesEndRef = useRef(null);
     const viewportRef = useRef(null);
+    const abortControllerRef = useRef(null);
+    const fileInputRef = useRef(null);
+    const modelSelectorRef = useRef(null);
+
+    const handleAttachClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleRemoveFile = () => {
+        setAttachedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const extractTextFromPdf = async (file) => {
+        return new Promise((resolve, reject) => {
+            const fileReader = new FileReader();
+            fileReader.onload = async function () {
+                try {
+                    const typedarray = new Uint8Array(this.result);
+                    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+                    const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                    let fullText = "";
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        const pageText = textContent.items.map(item => item.str).join(" ");
+                        fullText += pageText + "\n";
+                    }
+                    resolve(fullText);
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            fileReader.onerror = (err) => reject(err);
+            fileReader.readAsArrayBuffer(file);
+        });
+    };
+
+    const readImageAsBase64 = (file) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = (err) => reject(err);
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const handleFileChange = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsLoading(true);
+        try {
+            if (file.type === 'application/pdf') {
+                const text = await extractTextFromPdf(file);
+                setAttachedFile({ name: file.name, type: 'pdf', text });
+                toast.success("PDF attached and parsed successfully!");
+            } else if (file.type.startsWith('image/')) {
+                const base64 = await readImageAsBase64(file);
+                setAttachedFile({ name: file.name, type: 'image', base64 });
+                toast.success("Image attached successfully!");
+            } else {
+                toast.error("Unsupported file type. Please attach a PDF or an Image.");
+            }
+        } catch (err) {
+            console.error("Error processing file:", err);
+            toast.error("Failed to parse file.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleStopGeneration = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+        setIsLoading(false);
+        toast.success("Generation stopped");
+    };
+
     const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); };
 
     useEffect(() => { scrollToBottom(); }, [messages, isLoading]);
@@ -88,14 +206,27 @@ const Dashboard = () => {
     });
 
     useEffect(() => {
-        const handleKeyDown = (e) => { 
+        const handleKeyDown = (e) => {
             if (e.key === 'Escape') {
                 setIsSearchModalOpen(false);
                 setIsQuotaModalOpen(false);
+                setIsModelSelectorOpen(false);
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target)) {
+                setIsModelSelectorOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
     }, []);
 
     useEffect(() => {
@@ -139,21 +270,48 @@ const Dashboard = () => {
 
     const handleSendMessage = async (e, forcedContent) => {
         if (e) e.preventDefault();
-        const msgContent = forcedContent || chatInput.trim();
-        if (!msgContent) return;
-        
+        let msgContent = forcedContent || chatInput.trim();
+        if (!msgContent && !attachedFile) return;
+
         if (!user && freeChatsLeft <= 0) {
             setIsQuotaModalOpen(true);
             return;
         }
 
-        setIsLoading(true); setChatInput(''); 
+        setIsLoading(true); setChatInput('');
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        let payloadMessage = msgContent;
+        let fileObj = null;
+
+        if (attachedFile) {
+            if (attachedFile.type === 'pdf') {
+                payloadMessage = `[Attached Document: ${attachedFile.name}]\n\n--- DOCUMENT CONTENT ---\n${attachedFile.text}\n--- END OF DOCUMENT ---\n\n${msgContent || "Please review this PDF."}`;
+                msgContent = `[Uploaded Document: ${attachedFile.name}]\n\n${msgContent || "Please review this PDF."}`;
+            } else if (attachedFile.type === 'image') {
+                fileObj = {
+                    type: 'image',
+                    name: attachedFile.name,
+                    base64: attachedFile.base64
+                };
+                msgContent = `[Uploaded Image: ${attachedFile.name}]\n\n${msgContent || "Please review this image."}`;
+                payloadMessage = msgContent;
+            }
+            setAttachedFile(null);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+
         try {
             const tempMsg = { _id: 'user-' + Date.now(), content: msgContent, role: 'user' };
             setMessages(prev => [...prev, tempMsg]);
-            
-            const data = await sendMessageApi({ message: msgContent, chat: currentChatId, model: currentModel.id });
-            
+
+            const data = await sendMessageApi(
+                { message: payloadMessage, chat: currentChatId, model: currentModel.id, file: fileObj },
+                controller.signal
+            );
+
             if (!user) {
                 const nextFree = freeChatsLeft - 1;
                 setFreeChatsLeft(nextFree);
@@ -169,10 +327,17 @@ const Dashboard = () => {
             const aiId = 'ai-' + Date.now();
             setLatestAiMsgId(aiId);
             setMessages(prev => [...prev, { _id: aiId, content: data.aiMessage, role: 'ai' }]);
-        } catch (err) { 
-            toast.error("Error sending message"); 
-            console.error(err);
-        } finally { setIsLoading(false); }
+        } catch (err) {
+            if (err.name === 'CanceledError' || err.name === 'AbortError' || err.message === 'canceled') {
+                console.log("Request cancelled by user");
+            } else {
+                toast.error("Error sending message");
+                console.error(err);
+            }
+        } finally {
+            setIsLoading(false);
+            abortControllerRef.current = null;
+        }
     };
 
     const handleEditPrompt = (content) => {
@@ -201,19 +366,27 @@ const Dashboard = () => {
     const groupedChats = groupChatsByDate(filteredChats);
 
     const models = [
-        { category: 'OpenAI', list: [
-            { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI' }
-        ]},
-        { category: 'Google AI', list: [
-            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google' },
-            { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite', provider: 'Google' }
-        ]},
-        { category: 'Groq', list: [
-            { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', provider: 'Groq' }
-        ]},
-        { category: 'Mistral AI', list: [
-            { id: 'mistral-small', name: 'Mistral Small', provider: 'Mistral' }
-        ]}
+        {
+            category: 'OpenAI', list: [
+                { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI' }
+            ]
+        },
+        {
+            category: 'Google AI', list: [
+                { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google' },
+                { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite', provider: 'Google' }
+            ]
+        },
+        {
+            category: 'Groq', list: [
+                { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', provider: 'Groq' }
+            ]
+        },
+        {
+            category: 'Mistral AI', list: [
+                { id: 'mistral-small', name: 'Mistral Small', provider: 'Mistral' }
+            ]
+        }
     ];
 
     const filteredModels = models.map(cat => ({
@@ -302,7 +475,7 @@ const Dashboard = () => {
                         <div className="quota-content">
                             <i className="ri-error-warning-line main-icon"></i>
                             <h2>Free Quota Exhausted</h2>
-                            <p>You have used your 3 free guest messages. <br/> Please sign in to continue chatting with COROS.</p>
+                            <p>You have used your 3 free guest messages. <br /> Please sign in to continue chatting with COROS.</p>
                             <div className="quota-actions">
                                 <button className="login-primary" onClick={() => navigate('/login')}>Sign In</button>
                                 <button className="cancel-secondary" onClick={() => setIsQuotaModalOpen(false)}>Maybe Later</button>
@@ -360,7 +533,13 @@ const Dashboard = () => {
                                     </div>
                                 )}
                                 <div className="user-pill-v2" onClick={() => { setIsUserMenuOpen(!isUserMenuOpen); setIsThemeSubmenuOpen(false); }}>
-                                    <div className="avatar-circle-red">{user.username.charAt(0).toUpperCase()}</div><span className="name">{user.username}</span>
+                                    <div className="avatar-circle-green">
+                                        {user.username.split(' ').map(n => n.charAt(0)).join('').toUpperCase().slice(0, 2)}
+                                    </div>
+                                    <div className="user-info-meta">
+                                        <span className="name">{user.username}</span>
+                                        <span className="email">{user.email}</span>
+                                    </div>
                                 </div>
                             </div>
                         ) : (
@@ -374,15 +553,38 @@ const Dashboard = () => {
                 <button className="mobile-hamburger-btn" onClick={() => setIsMobileSidebarOpen(true)}><i className="ri-menu-line"></i></button>
                 {!isSidebarOpen && <button className="floating-sidebar-toggle desktop-only" onClick={() => setIsSidebarOpen(true)}><i className="ri-layout-left-line"></i></button>}
 
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept="application/pdf,image/*"
+                    style={{ display: 'none' }}
+                />
+
                 <div className="chat-window-viewport" ref={viewportRef}>
                     {!currentChatId && messages.length === 0 ? (
                         <div className="discovery-screen-v2">
-                            <h1 className="hero-title">COROS</h1>
+                            <h1 className="hero-title">What can I help with?</h1>
                             <div className="hero-input-zone">
-                                <UnifiedChatInput placeholder="Ask anything..." val={chatInput} onChange={setChatInput} onSend={handleSendMessage} onToggleModels={() => setIsModelSelectorOpen(!isModelSelectorOpen)} isModelSelectorOpen={isModelSelectorOpen} ModelSelector={ModelSelector} isLoading={isLoading} />
+                                <UnifiedChatInput
+                                    placeholder="Ask anything..."
+                                    val={chatInput}
+                                    onChange={setChatInput}
+                                    onSend={handleSendMessage}
+                                    onToggleModels={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
+                                    isModelSelectorOpen={isModelSelectorOpen}
+                                    ModelSelector={ModelSelector}
+                                    isLoading={isLoading}
+                                    onStop={handleStopGeneration}
+                                    attachedFile={attachedFile}
+                                    onRemoveFile={handleRemoveFile}
+                                    onAttachClick={handleAttachClick}
+                                    currentModel={currentModel}
+                                    modelSelectorRef={modelSelectorRef}
+                                />
                             </div>
                         </div>
-                    ) : ( 
+                    ) : (
                         <div className="document-style-flow">
                             {messages.map((m) => (
                                 <div key={m._id} className={`doc-msg-row ${m.role}`}>
@@ -390,8 +592,9 @@ const Dashboard = () => {
                                         <div className="user-msg-container">
                                             <div className="user-text-box">{m.content}</div>
                                             <div className="user-msg-actions">
+                                                <button onClick={() => { navigator.clipboard.writeText(m.content); toast.success("Copied to clipboard!"); }} title="Copy prompt"><i className="ri-file-copy-line"></i></button>
+                                                <button onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link copied! Share prompt."); }} title="Share prompt"><i className="ri-share-box-line"></i></button>
                                                 <button onClick={() => handleEditPrompt(m.content)} title="Edit prompt"><i className="ri-pencil-line"></i></button>
-                                                <button onClick={() => navigator.clipboard.writeText(m.content)} title="Copy prompt"><i className="ri-file-copy-line"></i></button>
                                             </div>
                                         </div>
                                     ) : (
@@ -402,8 +605,11 @@ const Dashboard = () => {
                                                 ) : (<div className="markdown-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown></div>)}
                                             </div>
                                             <div className="ai-toolbar-left">
-                                                <button className="tool-btn" onClick={() => handleSendMessage(null, "Regenerate")}><i className="ri-restart-line"></i></button>
-                                                <button className="tool-btn" onClick={() => navigator.clipboard.writeText(m.content)}><i className="ri-file-copy-line"></i></button>
+                                                <button className="tool-btn" onClick={() => { navigator.clipboard.writeText(m.content); toast.success("Copied to clipboard!"); }} title="Copy response"><i className="ri-file-copy-line"></i></button>
+                                                <button className="tool-btn" onClick={() => toast.success("Liked response!")} title="Good response"><i className="ri-thumb-up-line"></i></button>
+                                                <button className="tool-btn" onClick={() => toast.success("Disliked response!")} title="Bad response"><i className="ri-thumb-down-line"></i></button>
+                                                <button className="tool-btn" onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link copied! Share response."); }} title="Share response"><i className="ri-share-box-line"></i></button>
+                                                <button className="tool-btn" onClick={() => handleSendMessage(null, "Regenerate")} title="Regenerate response"><i className="ri-restart-line"></i></button>
                                             </div>
                                             <div className="msg-divider"></div>
                                         </div>
@@ -421,7 +627,22 @@ const Dashboard = () => {
                 {(currentChatId || messages.length > 0) && (
                     <div className="chat-input-wrapper-fixed">
                         <div className="inner-input-container">
-                             <UnifiedChatInput placeholder="Ask anything..." val={chatInput} onChange={setChatInput} onSend={handleSendMessage} onToggleModels={() => setIsModelSelectorOpen(!isModelSelectorOpen)} isModelSelectorOpen={isModelSelectorOpen} ModelSelector={ModelSelector} isLoading={isLoading} />
+                            <UnifiedChatInput
+                                placeholder="Ask anything..."
+                                val={chatInput}
+                                onChange={setChatInput}
+                                onSend={handleSendMessage}
+                                onToggleModels={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
+                                isModelSelectorOpen={isModelSelectorOpen}
+                                ModelSelector={ModelSelector}
+                                isLoading={isLoading}
+                                onStop={handleStopGeneration}
+                                attachedFile={attachedFile}
+                                onRemoveFile={handleRemoveFile}
+                                onAttachClick={handleAttachClick}
+                                currentModel={currentModel}
+                                modelSelectorRef={modelSelectorRef}
+                            />
                         </div>
                     </div>
                 )}

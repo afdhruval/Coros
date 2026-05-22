@@ -18,7 +18,7 @@ export async function register(req, res) {
         }
 
         // We create the user with verified: false. This is standard to allow verification links to work.
-        const user = await userModel.create({ username, email, password });
+        const user = await userModel.create({ username, email, password, verified: true });
         
         const emailVerificationToken = jwt.sign({ email: user.email }, process.env.JWT_SECRET, { expiresIn: '1h' });
         
@@ -114,7 +114,7 @@ export async function loginUser(req, res) {
             maxAge: 24 * 60 * 60 * 1000
         });
 
-        res.status(200).json({ success: true, user: { id: user._id, username: user.username } });
+        res.status(200).json({ success: true, user: { id: user._id, username: user.username, email: user.email } });
     } catch (err) {
         res.status(500).json({ message: "Server error during login", success: false });
     }
