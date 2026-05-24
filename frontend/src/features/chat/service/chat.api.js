@@ -1,7 +1,8 @@
 import axios from "axios"
+import { API_URL } from "../../../config/config"
 
 const api = axios.create({
-    baseURL: "/api/chats", 
+    baseURL: `${API_URL}/api/chats`,
     withCredentials: true
 })
 

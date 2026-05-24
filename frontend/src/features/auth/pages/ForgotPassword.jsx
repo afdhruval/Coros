@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
+import { API_URL } from '../../../config/config';
 import './auth.scss';
+
+const api = axios.create({
+    baseURL: `${API_URL}/auth`,
+    withCredentials: true,
+});
 
 const ForgotPassword = () => {
     const [email, setEmail] = useState('');
@@ -18,7 +24,7 @@ const ForgotPassword = () => {
         if (!email) { toast.error('Email is required'); return; }
         setLoading(true);
         try {
-            await axios.post('http://localhost:3000/auth/forgot-password', { email });
+            await api.post('/forgot-password', { email });
             toast.success('OTP sent to your email!');
             setStep(2);
         } catch (err) {
@@ -32,7 +38,7 @@ const ForgotPassword = () => {
         if (newPassword.length < 8) { toast.error('Password must be at least 8 characters'); return; }
         setLoading(true);
         try {
-            await axios.post('http://localhost:3000/auth/reset-password', { email, otp, newPassword });
+            await api.post('/reset-password', { email, otp, newPassword });
             toast.success('Password reset successfully! Please sign in.');
             navigate('/chat');
         } catch (err) {

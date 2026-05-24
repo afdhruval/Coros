@@ -20,7 +20,7 @@ export const useChat = () => {
 
             let finalChatId = chatId || "guest_chat";
 
-            if (!user) {
+            zif (!user) {
                 // Guest mode: Mock chat
                 dispatch(addNewMessage({
                     chatId: finalChatId,

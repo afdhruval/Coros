@@ -1,40 +1,41 @@
 import axios from "axios"
+import { API_URL } from "../../../config/config"
 
 const api = axios.create({
-    baseURL: "", // relative URL to let Vite proxy handle it securely
+    baseURL: `${API_URL}/api/auth`,
     withCredentials: true
 })
 
-
 export async function register({ email, username, password }) {
-
-    const response = await api.post("/api/auth/register", {
-        email, username, password
+    const response = await api.post("/register", {
+        email,
+        username,
+        password
     })
 
     return response.data
 }
 
 export async function login({ email, password }) {
-    const response = await api.post("/api/auth/login", {
-        email, password
+    const response = await api.post("/login", {
+        email,
+        password
     })
 
     return response.data
 }
 
 export async function getMe() {
-    const response = await api.get("/api/auth/getme")
-
+    const response = await api.get("/getme")
     return response.data
 }
 
 export async function verifyEmail(token) {
-    const response = await api.get(`/api/auth/verify?token=${token}`)
+    const response = await api.get(`/verify?token=${token}`)
     return response.data
 }
 
 export async function logoutApi() {
-    const response = await api.get("/api/auth/logout")
+    const response = await api.get("/logout")
     return response.data
 }

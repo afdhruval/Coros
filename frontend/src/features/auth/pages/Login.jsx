@@ -3,6 +3,7 @@ import { useNavigate, Navigate, Link } from 'react-router-dom'
 import { useAuth } from '../hook/useAuth'
 import { useSelector } from 'react-redux'
 import { toast } from 'react-hot-toast'
+import { API_URL } from '../../../config/config'
 import './auth.scss'
 
 const Login = () => {
@@ -35,8 +36,7 @@ const Login = () => {
     }
 
     const handleGoogleLogin = () => {
-        const backendUrl = window.location.hostname === 'localhost' ? 'http://localhost:5000' : `${window.location.protocol}//${window.location.hostname}:5000`;
-        window.location.href = `${backendUrl}/auth/google`;
+        window.location.href = `${API_URL}/auth/google`
     }
 
     return (

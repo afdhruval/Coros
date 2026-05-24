@@ -3,9 +3,8 @@ import jwt from "jsonwebtoken";
 import { sendEmail } from "../services/mail.service.js";
 
 // Utility for URL generation
-const getUrlPrefix = (type) => {
-    if (type === 'frontend') return process.env.FRONTEND_URL || 'http://localhost:5173';
-    return process.env.BACKEND_URL || 'http://localhost:5000';
+const getUrlPrefix = (req) => {
+    return `${req.protocol}://${req.get("host")}`;
 };
 
 export async function register(req, res) {
@@ -19,11 +18,11 @@ export async function register(req, res) {
 
         // We create the user with verified: false. This is standard to allow verification links to work.
         const user = await userModel.create({ username, email, password, verified: true });
-        
+
         const emailVerificationToken = jwt.sign({ email: user.email }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        
+
         // POINT TO FRONTEND: This ensures users see a beautiful React page, not a raw backend string.
-        const verificationUrl = `${getUrlPrefix('frontend')}/verify?token=${emailVerificationToken}`;
+        const verificationUrl = `${getUrlPrefix(req)}/verify?token=${emailVerificationToken}`;
 
         // PROFESSIONAL EMAIL TEMPLATE (Gmail-friendly)
         await sendEmail({
@@ -109,8 +108,8 @@ export async function loginUser(req, res) {
         const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET);
         res.cookie("token", token, {
             httpOnly: true,
-            secure: false, // development
-            sameSite: 'lax',
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
             maxAge: 24 * 60 * 60 * 1000
         });
 
@@ -127,7 +126,7 @@ export async function forgotPassword(req, res) {
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     user.otp = otp;
-    user.otpExpiry = Date.now() + 10 * 60 * 1000; 
+    user.otpExpiry = Date.now() + 10 * 60 * 1000;
     await user.save();
 
     await sendEmail({
